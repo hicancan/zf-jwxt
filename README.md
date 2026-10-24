@@ -1,61 +1,53 @@
-# 南邮教务助手
+# zf-jwxt
 
-`njupt-jwxt` 是面向南京邮电大学当前教务系统的 Chrome / Edge 扩展。它在你已经
-登录教务系统后，受控读取班级课表 JSON，保存采集进度，并导出可校验的全校课表
-数据包。
+A command-line client for ZhengFang (正方) `jwglxt` teaching-management
+deployments. It logs in with a password, queries the JSON endpoints a browser
+would, and writes what the server answered as plain files.
 
-它只做课表采集：不读取密码和 Cookie，不自动评教，不修改教务数据，也不把原始
-响应上传到第三方。
+It knows the protocol and nothing about any particular school: the base URL,
+the proxy and the credentials are inputs.
 
-## 使用
+## Build
 
-1. 在 Chrome 或 Edge 中登录 `http://jwglxt.njupt.edu.cn/`。
-2. 打开“班级课表查询”。
-3. 在右下角的“南邮教务助手”中点击“开始采集”。
-4. 采集完成后下载 `TeachingScheduleSource` ZIP。
-
-任务会逐条写入扩展自己的 IndexedDB。页面关闭或浏览器重启后，再次打开班级课表
-页即可继续。登录失效、网络错误和空课表都会形成明确状态，不会静默跳过。
-
-## 数据边界
-
-导出包包含课表目录、学期日期、节次时间和规范化的班级课表响应。账号信息、分页
-状态、Cookie、Token、密码、电话以及私有在线会议链接不会写入导出包。
-
-`njupt-jwxt` 只支持当前系统：
-
-- 主机：`jwglxt.njupt.edu.cn`
-- 全校目录：`bjkbdy_cxBjkbdyTjkbList.html`
-- 班级课表：`bjkbdy_cxBjKb.html`
-- 学期内部代码由页面当前选择读取，不做日期猜测。
-
-## 开发
-
-```powershell
-npm ci
-npm run prepare:wxt
-npm run typecheck
-npm test
-npm run build
-npm run zip
+```sh
+go build -trimpath -ldflags='-s -w' -o bin/zf-jwxt ./cmd/zf-jwxt
+go test ./...
 ```
 
-开发构建位于 `.output/chrome-mv3/`。在浏览器扩展管理页开启开发者模式后，选择
-“加载已解压的扩展程序”。
+## Capture every class timetable of a term
 
-## 架构
+```sh
+export ZF_USERNAME=... ZF_PASSWORD=...
+zf-jwxt timetable -base http://jwglxt.example.edu.cn -out data            # current term
+zf-jwxt timetable -base http://jwglxt.example.edu.cn -out data -term 2026-2027-1
+zf-jwxt timetable ... -proxy socks5://127.0.0.1:1080                     # through a tunnel
+```
+
+Output, one directory per term:
 
 ```text
-当前教务系统 JSON
-  -> 严格解码与公开字段规范化
-  -> 限速、重试、暂停与断点恢复
-  -> 扩展 IndexedDB
-  -> njupt-teaching-schedule-source
+data/2026-2027-1/
+  term.json          year, term number, observation time
+  periods.json       the daily period clock
+  catalog.json       every class timetable the term offers
+  classes/<id>.json  one class timetable, as answered
 ```
 
-导出格式使用确定性 canonical JSON。`source_id` 只由规范化内容决定；采集时间、
-目录顺序和教务页面分页状态不会改变内容身份。
+A class file that exists is not fetched again, so rerunning the command
+resumes an interrupted capture. The command prints a JSON summary and exits
+non-zero if any class failed. Account and contact fields echoed by the server
+(`userModel`, phone numbers, e-mail, …) are dropped before writing.
 
-## 许可协议
+## Login
 
-ISC © 2025–2026
+The password is RSA-encrypted with the key the server publishes, as the login
+page does. A rejected login is reported and **never retried**: ZhengFang locks
+an account after a few consecutive failures. An expired session during a
+capture triggers a new login, at most five times per run; transport errors
+are retried with back-off.
+
+## Scope
+
+Use it with your own account, within the access that account already has.
+
+MIT licence, see [LICENSE](LICENSE).

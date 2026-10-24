@@ -1,6 +1,4 @@
-.output
-.wxt
-node_modules
-dist
-*.zip
-docs/
+/bin/
+*.exe
+/out/
+config.json
