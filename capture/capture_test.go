@@ -76,6 +76,17 @@ func fakeServer(t *testing.T, password string) (*httptest.Server, *int32) {
 			fmt.Fprintf(w, `{"kbList":[{"kcmc":"课程-%s","sjh":"13800000000"}]}`, r.Form.Get("bh_id"))
 		}
 	})
+	mux.HandleFunc("/cdjy/cdjy_cxKxcdlb.html", func(w http.ResponseWriter, r *http.Request) {
+		if authed(w, r) {
+			_ = r.ParseForm()
+			// Room A is free except in week 2 (zcd bit 2); room B always.
+			items := `{"cd_id":"B","cdmc":"教1－102","cdlbmc":"仙林多媒体","zws":"60","userModel":{"x":1}}`
+			if r.Form.Get("zcd") != "2" {
+				items = `{"cd_id":"A","cdmc":"教1－101","cdlbmc":"仙林多媒体","zws":"30"},` + items
+			}
+			fmt.Fprintf(w, `{"items":[%s],"totalResult":2}`, items)
+		}
+	})
 	return httptest.NewServer(mux), &logins
 }
 
@@ -123,5 +134,30 @@ func TestRejectedLoginIsReported(t *testing.T) {
 	err := client.Login(context.Background())
 	if err == nil || *logins != 0 {
 		t.Fatalf("want rejection, got %v", err)
+	}
+}
+
+
+func TestRoomsWritesFreePeriodsAndRegistry(t *testing.T) {
+	srv, _ := fakeServer(t, "secret")
+	defer srv.Close()
+	client, _ := zf.New(srv.URL, "", "u", "secret")
+	if err := client.Login(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	res, err := Rooms(context.Background(), client, zf.Term{Year: 2026, Number: 1}, []int{1, 2}, Options{Dir: dir, Workers: 2, MaxRelogins: 2})
+	if err != nil || len(res.Failed) != 0 || res.Slots != 14 || res.Rooms != 2 {
+		t.Fatalf("result %+v, %v", res, err)
+	}
+	var day struct{ Periods map[string][]string }
+	b, _ := os.ReadFile(filepath.Join(dir, "2026-2027-1", "free", "2-3.json"))
+	if err := json.Unmarshal(b, &day); err != nil || len(day.Periods["1"]) != 1 || day.Periods["1"][0] != "B" {
+		t.Fatalf("week 2 day 3: %s", b)
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, "2026-2027-1", "rooms.json"))
+	var rooms []map[string]any
+	if err := json.Unmarshal(b, &rooms); err != nil || len(rooms) != 2 || rooms[0]["zws"] != "30" || rooms[1]["userModel"] != nil {
+		t.Fatalf("rooms: %s", b)
 	}
 }

@@ -38,6 +38,25 @@ resumes an interrupted capture. The command prints a JSON summary and exits
 non-zero if any class failed. Account and contact fields echoed by the server
 (`userModel`, phone numbers, e-mail, …) are dropped before writing.
 
+## Capture free rooms
+
+```sh
+zf-jwxt rooms -base http://jwglxt.example.edu.cn -out data -weeks 9-20   # current term
+```
+
+The free-room page (查询空闲教室) is asked once per period of every day of the
+given weeks, for every campus at once — about 84 quick requests a week, three
+at a time. Output:
+
+```text
+data/2026-2027-1/
+  rooms.json                   every room the answers named: cd_id, name, building, floor, category, seats
+  free/<week>-<weekday>.json   {"observed_at", "periods": {"1": [cd_id, …], …}}
+```
+
+A day file is written only when all its periods were answered, so it never
+mixes two runs. Rooms seen in earlier runs stay in `rooms.json`.
+
 ## Login
 
 The password is RSA-encrypted with the key the server publishes, as the login
