@@ -1,11 +1,15 @@
 # zf-jwxt
 
-A command-line client for ZhengFang (正方) `jwglxt` teaching-management
-deployments. It logs in with a password, queries the JSON endpoints a browser
-would, and writes what the server answered as plain files.
+A command-line client for ZhengFang (正方) teaching-management systems, both generations:
 
-It knows the protocol and nothing about any particular school: the base URL,
-the proxy and the credentials are inputs.
+| Directory | System | Protocol |
+| --- | --- | --- |
+| `jwglxt/` | the current one (`jwglxt`) | JSON over UTF-8, RSA-encrypted password, jqGrid paging |
+| `jwxt/` | the classic one (`jwxt`) | ASP.NET WebForms, GB18030, `__VIEWSTATE` postbacks, image captcha |
+
+It asks what a browser would ask and prints what the server answered, every field as it came; nothing is renamed or
+left out. It knows the protocols and nothing about any particular school: the base URL, the proxy and the account are
+inputs. Which questions to ask, how often and where to keep the answers belong to whoever calls it.
 
 ## Build
 
@@ -14,56 +18,56 @@ go build -trimpath -ldflags='-s -w' -o bin/zf-jwxt ./cmd/zf-jwxt
 go test ./...
 ```
 
-## Capture every class timetable of a term
+## Signing in
+
+- **Password**: `ZF_USERNAME` and `ZF_PASSWORD`. The current system takes the RSA-encrypted password as its login page
+  does; the classic one also needs its captcha read, by a model file the `captcha` package reads (`-captcha-model`) or a command of your own
+  (`-captcha-cmd`, image on stdin, text on stdout).
+- **A session from elsewhere**: `-cookie 'JSESSIONID=…'`, or `-cookie-cmd` running a command that prints cookies, such
+  as [cas-sso](https://github.com/hicancan/cas-sso) for schools that sign in through a unified portal.
+
+A rejected login is reported and never retried: ZhengFang locks an account after a few consecutive failures.
+
+## The current system
 
 ```sh
-export ZF_USERNAME=... ZF_PASSWORD=...
-zf-jwxt timetable -base http://jwglxt.example.edu.cn -out data            # current term
-zf-jwxt timetable -base http://jwglxt.example.edu.cn -out data -term 2026-2027-1
-zf-jwxt timetable ... -proxy socks5://127.0.0.1:1080                     # through a tunnel
+zf-jwxt jwglxt term            -base http://jwglxt.example.edu.cn
+zf-jwxt jwglxt class-schedules -base … -term 2026-2027-1 -all
+zf-jwxt jwglxt free-rooms      -base … -week 12 -weekday 1 -period 1
+zf-jwxt jwglxt raw             -base … -path '/xtgl/comm_cxZydmPaged.html' -all
 ```
 
-Output, one directory per term:
+Named commands: `term`, `dict -kind …`, `profile`, `curriculum`, `exec-plan`, `schedule`, `class-schedules`,
+`class-timetable`, `periods`, `weekly-schedule`, `rooms`, `free-rooms`, `grades`, `credit-stats`, `exams`,
+`unscheduled-exams`, `enrollments`, `selected-courses`, `textbooks`, `evaluations`. `raw` asks any endpoint; `-param
+key=value` adds request fields, `-all` follows every page.
 
-```text
-data/2026-2027-1/
-  term.json          year, term number, observation time
-  periods.json       the daily period clock
-  catalog.json       every class timetable the term offers
-  classes/<id>.json  one class timetable, as answered
-```
-
-A class file that exists is not fetched again, so rerunning the command
-resumes an interrupted capture. The command prints a JSON summary and exits
-non-zero if any class failed. Account and contact fields echoed by the server
-(`userModel`, phone numbers, e-mail, …) are dropped before writing.
-
-## Capture free rooms
+**Batch**: many requests on one session. Each line on stdin is a request, each line on stdout its answer, tagged with
+the request's `id`:
 
 ```sh
-zf-jwxt rooms -base http://jwglxt.example.edu.cn -out data -weeks 9-20   # current term
+zf-jwxt jwglxt batch -base … -workers 2 -delay 300ms < requests.jsonl > answers.jsonl
 ```
 
-The free-room page (查询空闲教室) is asked once per period of every day of the
-given weeks, for every campus at once — about 84 quick requests a week, three
-at a time. Output:
-
-```text
-data/2026-2027-1/
-  rooms.json                   every room the answers named: cd_id, name, building, floor, category, seats
-  free/<week>-<weekday>.json   {"observed_at", "periods": {"1": [cd_id, …], …}}
+```json
+{"id": "B240402", "command": "class-timetable", "term": "2026-2027-1", "params": {"bh_id": "B240402"}}
+{"id": "B240402", "ok": true, "result": {"kbList": […]}}
 ```
 
-A day file is written only when all its periods were answered, so it never
-mixes two runs. Rooms seen in earlier runs stay in `rooms.json`.
+A request carries the same fields as the flags (`command`, `term`, `kind`, `path`, `limit`, `page`, `all`, `week`,
+`weekday`, `period`, `params`). An expired session is signed in again, at most five times per batch, when the batch
+signed in with a password; dropped connections are retried with back-off.
 
-## Login
+## The classic system
 
-The password is RSA-encrypted with the key the server publishes, as the login
-page does. A rejected login is reported and **never retried**: ZhengFang locks
-an account after a few consecutive failures. An expired session during a
-capture triggers a new login, at most five times per run; transport errors
-are retried with back-off.
+```sh
+zf-jwxt jwxt curriculum -base http://jwxt.example.edu.cn -grade 2024 -college 14 -major 1401 -all
+zf-jwxt jwxt page       -base … -path xxjsjy.aspx -post -param xiaoq=1
+```
+
+Named commands: `curriculum`, `grades`, `level-exams`, `makeup-exams`, `schedule`, `class-schedule`,
+`teacher-schedule`, `time-schedule`, `rooms`, `textbooks`, `profile`, `competitions`, `thesis-topics`,
+`teaching-plans`. `page` reads any page: its form controls, options and every table, after a postback when asked.
 
 ## Scope
 
