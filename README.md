@@ -62,12 +62,16 @@ signed in with a password; dropped connections are retried with back-off.
 
 ```sh
 zf-jwxt jwxt curriculum -base http://jwxt.example.edu.cn -grade 2024 -college 14 -major 1401 -all
+zf-jwxt jwxt curriculum -base http://jwxt.example.edu.cn -grade 2024 -college 14
 zf-jwxt jwxt page       -base … -path xxjsjy.aspx -post -param xiaoq=1
 ```
 
 Named commands: `curriculum`, `grades`, `level-exams`, `makeup-exams`, `schedule`, `class-schedule`,
 `teacher-schedule`, `time-schedule`, `rooms`, `textbooks`, `profile`, `competitions`, `thesis-topics`,
 `teaching-plans`. `page` reads any page: its form controls, options and every table, after a postback when asked.
+
+Without `-major`, `curriculum` returns the filters and visible rows after applying any `-grade` and `-college`.
+Omitted filters keep the page's selected defaults; the returned major options belong to that selection.
 
 ## Scope
 

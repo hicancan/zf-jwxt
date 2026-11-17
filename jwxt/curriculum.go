@@ -51,14 +51,14 @@ var (
 	tagPattern    = regexp.MustCompile(`<[^>]+>`)
 )
 
-// CurriculumPage fetches pyjh.aspx and parses the current filters and visible rows.
-func (c *Client) CurriculumPage(ctx context.Context) (CurriculumFilters, []CurriculumRow, error) {
-	path := "/pyjh.aspx?xh=" + url.QueryEscape(c.username) + "&gnmkdm=N121607"
-	doc, err := c.GetPage(ctx, path)
+// CurriculumPage selects the optional grade and college on pyjh.aspx and returns
+// the resulting filters and visible rows. Empty filters keep the page's defaults.
+func (c *Client) CurriculumPage(ctx context.Context, grade, college string) (CurriculumFilters, []CurriculumRow, error) {
+	rows, doc, err := c.fetchCurriculumMajor(ctx, grade, college, "", false)
 	if err != nil {
 		return CurriculumFilters{}, nil, err
 	}
-	return parseFilters(doc), parseGrid(doc), nil
+	return parseFilters(doc), rows, nil
 }
 
 // CurriculumByMajor selects a grade, college code, and major code on pyjh.aspx
@@ -74,10 +74,22 @@ func (c *Client) fetchCurriculumMajor(ctx context.Context, grade, college, major
 	if err != nil {
 		return nil, "", err
 	}
+	selectGrade, selectCollege := grade != "", college != ""
+	filters := parseFilters(doc)
+	if grade == "" {
+		grade = selectedOption(filters.Grades)
+	}
+	if college == "" {
+		college = selectedOption(filters.Colleges)
+	}
 	vs := extractViewState(doc)
-	if college != "" {
+	if selectGrade || selectCollege {
+		target := "nj"
+		if selectCollege {
+			target = "xymc"
+		}
 		doc, err = c.PostForm(ctx, path, url.Values{
-			"__EVENTTARGET":   {"xymc"},
+			"__EVENTTARGET":   {target},
 			"__EVENTARGUMENT": {""},
 			"__VIEWSTATE":     {vs},
 			"nj":              {grade},
@@ -161,7 +173,7 @@ func parseFilters(doc string) CurriculumFilters {
 			if val == "" && lbl == "" {
 				continue
 			}
-			opts = append(opts, Option{Value: val, Label: lbl})
+			opts = append(opts, Option{Value: val, Label: lbl, Selected: selectedPat.MatchString(om[0])})
 		}
 		switch sm[1] {
 		case "nj":
@@ -173,6 +185,18 @@ func parseFilters(doc string) CurriculumFilters {
 		}
 	}
 	return f
+}
+
+func selectedOption(options []Option) string {
+	for _, option := range options {
+		if option.Selected {
+			return option.Value
+		}
+	}
+	if len(options) > 0 {
+		return options[0].Value
+	}
+	return ""
 }
 
 func parseGrid(doc string) []CurriculumRow {

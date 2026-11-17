@@ -440,12 +440,12 @@ func dispatchJwxt(args []string) {
 	)
 	switch sub {
 	case "curriculum":
-		if *grade != "" && *college != "" && *major != "" {
+		if *major != "" {
 			var rows []jwxt.CurriculumRow
 			rows, err = c.CurriculumByMajor(ctx, *grade, *college, *major, *allPages)
 			res = map[string]any{"rows": rows}
 		} else {
-			filters, rows, e := c.CurriculumPage(ctx)
+			filters, rows, e := c.CurriculumPage(ctx, *grade, *college)
 			err = e
 			res = map[string]any{"filters": filters, "rows": rows}
 		}
